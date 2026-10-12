@@ -66,5 +66,8 @@ build/
 ### Mac OS ###
 .DS_Store
 
-data/
+# Dados na raiz do repositorio (ancorado: nao pega src/**/data)
+/data/
 
+
+.omc/
