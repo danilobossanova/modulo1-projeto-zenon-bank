@@ -3,6 +3,8 @@ package br.com.zenon;
 import br.com.zenon.fraud.Transaction;
 import br.com.zenon.fraud.TransactionCustomer;
 import br.com.zenon.fraud.TransactionType;
+import br.com.zenon.fraud.ingestor.IoTransactionIngestor;
+import br.com.zenon.fraud.ingestor.TransactionIngestor;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -29,5 +31,15 @@ public class Main {
         for (var transacao : List.of(pagamento, saque)) {
             IO.println(transacao);
         }
+
+        IO.println("\n-------------------------------------------------------");
+
+        //A variavel e do tipo da interface: trocar a implementacao abaixo por
+        //NioTransactionIngestor ou Nio2TransactionIngestor nao muda mais nada aqui.
+        TransactionIngestor ingestor = new IoTransactionIngestor();
+
+        List<Transaction> transacoes = ingestor.read("data/PS_20174392719_1491204439457_log.csv");
+        transacoes.stream().limit(10).forEach(IO::println);
+
     }
 }
