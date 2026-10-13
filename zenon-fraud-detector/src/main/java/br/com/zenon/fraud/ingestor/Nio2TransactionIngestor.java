@@ -46,7 +46,7 @@ public class Nio2TransactionIngestor implements TransactionIngestor {
                     continue;
                 }
 
-                transactions.add(TransactionLineParser.parseDataLine(line, lineCounter));
+                TransactionLineParser.tryParse(line).ifPresent(transactions::add);
             }
 
         } catch (IOException e) {

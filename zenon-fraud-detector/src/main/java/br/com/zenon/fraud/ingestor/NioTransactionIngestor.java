@@ -98,6 +98,6 @@ public class NioTransactionIngestor implements TransactionIngestor {
             text = text.substring(0, text.length() - 1);
         }
 
-        out.add(TransactionLineParser.parseDataLine(text, lineNumber));
+        TransactionLineParser.tryParse(text).ifPresent(out::add);
     }
 }

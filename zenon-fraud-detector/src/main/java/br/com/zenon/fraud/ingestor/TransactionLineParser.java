@@ -5,6 +5,7 @@ import br.com.zenon.fraud.TransactionCustomer;
 import br.com.zenon.fraud.TransactionType;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 /**
  * Converte uma linha do CSV do PaySim em uma {@link Transaction}.
@@ -39,20 +40,24 @@ final class TransactionLineParser {
     }
 
     /**
-     * Converte uma linha de dados, identificando a linha na mensagem em caso de falha.
+     * Tenta converter uma linha, devolvendo {@link Optional#empty()} se ela for inválida.
      *
-     * <p>Saber <em>qual</em> linha quebrou é a única pergunta que importa num arquivo com
-     * milhões de registros, por isso o número e o conteúdo entram na mensagem.
+     * <p>Uma linha corrompida não pode interromper a leitura do arquivo inteiro. Devolver
+     * {@code Optional} em vez de propagar a exceção torna essa decisão explícita no tipo de
+     * retorno: quem chama é obrigado a lidar com a ausência, e não há {@code null} circulando.
      *
-     * @param line       a linha, já sem a quebra de linha
-     * @param lineNumber posição da linha no arquivo, contando o cabeçalho
+     * <p>O erro é registrado em {@link System#err} no formato exigido pelo enunciado, com o
+     * conteúdo da linha e a exceção que a rejeitou.
+     *
+     * @param line a linha, já sem a quebra de linha
+     * @return a transação, ou vazio se a linha for inválida
      */
-    static Transaction parseDataLine(String line, int lineNumber) {
+    static Optional<Transaction> tryParse(String line) {
         try {
-            return parse(line);
+            return Optional.of(parse(line));
         } catch (RuntimeException e) {
-            throw new IllegalArgumentException(
-                    "Falha ao processar a linha " + lineNumber + ": " + line, e);
+            System.err.println("Erro: " + line + " | " + e);
+            return Optional.empty();
         }
     }
 

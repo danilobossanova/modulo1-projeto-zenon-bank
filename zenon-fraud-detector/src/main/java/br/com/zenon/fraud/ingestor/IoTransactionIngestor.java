@@ -41,7 +41,7 @@ public class IoTransactionIngestor implements TransactionIngestor {
                     continue;
                 }
 
-                transactions.add(TransactionLineParser.parseDataLine(line, lineCounter));
+                TransactionLineParser.tryParse(line).ifPresent(transactions::add);
             }
 
         } catch (IOException e) {

@@ -36,16 +36,16 @@ public record Transaction(
 ) {
 
     public Transaction {
-        Objects.requireNonNull(type, "type não pode ser nulo");
-        Objects.requireNonNull(amount, "amount não pode ser nulo");
-        Objects.requireNonNull(origin, "origin não pode ser nulo");
-        Objects.requireNonNull(recipient, "recipient não pode ser nulo");
+        Objects.requireNonNull(type, "type should not be null");
+        Objects.requireNonNull(amount, "amount should not be null");
+        Objects.requireNonNull(origin, "origin should not be null");
+        Objects.requireNonNull(recipient, "recipient should not be null");
 
         if (step < 1) {
-            throw new IllegalArgumentException("step deve ser maior ou igual a 1, recebido: " + step);
+            throw new IllegalArgumentException("step should be positive: " + step);
         }
         if (amount.signum() < 0) {
-            throw new IllegalArgumentException("amount não pode ser negativo, recebido: " + amount);
+            throw new IllegalArgumentException("amount should be positive: " + amount);
         }
 
         /*
