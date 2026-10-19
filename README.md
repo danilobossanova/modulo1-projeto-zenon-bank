@@ -23,100 +23,89 @@ Siga o passo a passo do quadro de atividades (Trello) do projeto prático dessa 
 
 ---
 
-## ✅ Tarefa 7 — I/O eficiente: carregar na RAM vs processar em stream
+## ✅ Tarefa 8 — Internacionalização do relatório
 
-Processamento do arquivo completo do PaySim — 6.362.620 transações, cerca de 493 MB — com o heap limitado, sem nunca carregar o arquivo na memória.
+O relatório de fraudes exportável em português ou inglês: texto, moeda e formato dos números conforme o idioma escolhido pelo usuário.
 
 ### O que o enunciado pediu
 
 | # | Requisito | Status |
 |---|---|---|
-| 1 | Branch `tarefa/07-nio`, com commit e push da entrega | 🚧 ¹ |
-| 2 | Remover o limite do `TransactionIngestor`, ver o `OutOfMemoryError` com `-Xmx128m` e devolver o limite a 100 mil | ✅ ² |
-| 3 | `TransactionReport` usando `java.nio.file.Files.lines(Path)` | ✅ |
-| 4 | Processar o arquivo inteiro calculando apenas total de linhas, total de fraudes e valor transacionado | ✅ |
-| 5 | `ReportMain` sobre o PaySim completo, com `-Xmx128m` | ✅ ³ |
+| 1 | Branch `tarefa/08-i18n`, com commit e push da entrega | 🚧 ¹ |
+| 2 | `ReportMain` internacionalizada para português e inglês | ✅ |
+| 2.1 | Bundles `report_pt.properties` e `report_en.properties`, com `ResourceBundle` para os cabeçalhos | ✅ |
+| 2.2 | Valores monetários formatados com `NumberFormat` conforme o `Locale` | ✅ |
+| 2.3 | Argumento em que o usuário escolhe entre português e inglês | ✅ |
 
-¹ Branch criada e commit da entrega feito. O push é o passo que fecha a tarefa.
-
-² O erro foi reproduzido e está registrado abaixo. O limite voltou a `100_001` antes do commit, como o enunciado pede.
-
-³ Os três números saem idênticos ao exemplo do enunciado.
-
-### O `OutOfMemoryError` do item 2
-
-Com `LAST_LINE_TO_READ = Integer.MAX_VALUE` e `-Xmx128m`:
-
-```
-Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
-	at java.base/java.util.Arrays.copyOf(Arrays.java:3478)
-	at java.base/java.util.ArrayList.grow(ArrayList.java:238)
-	at java.base/java.util.ArrayList.add(ArrayList.java:497)
-	at java.base/java.lang.String.split(String.java:3512)
-	at br.com.zenon.fraud.ingestor.TransactionLineParser.parse(TransactionLineParser.java:72)
-	at br.com.zenon.fraud.ingestor.NioTransactionIngestor.read(NioTransactionIngestor.java:60)
-	at br.com.zenon.Main.main(Main.java:84)
-```
-
-O topo da pilha é o diagnóstico: `ArrayList.grow`. Não faltou memória para **ler** o arquivo — faltou para **guardar** o resultado da leitura. A API de I/O não era o problema; o problema era a assinatura `List<Transaction> read(...)`, que obriga todas as transações a existirem ao mesmo tempo.
-
-### O que foi implementado
-
-| Arquivo | Papel |
-|---|---|
-| `TransactionReport` | varre o arquivo com `Files.lines` e agrega em uma única passada |
-| `TransactionSummary` | record com os três totais: o único resultado que sobrevive à varredura |
-| `ReportMain` | ponto de entrada próprio, separado da `Main` |
-
-`Files.lines(Path)` devolve um `Stream<String>` preguiçoso: não lê o arquivo para montar o stream, lê conforme o consumidor pede a próxima linha. Cada linha é contabilizada e descartada na hora.
+¹ Branch criada e commits da entrega feitos. O push é o passo que fecha a tarefa.
 
 ### Resultado
 
 ```
-Total de linhas: 6362620
-Total de fraudes: 8213
-Valor total transacionado: 1144392944759.77
+java -Xmx128m -cp target/classes br.com.zenon.ReportMain pt
+
+Total de linhas: 6.362.620
+Total de fraudes: 8.213
+Valor total transacionado: R$ 1.144.392.944.759,77
 ```
 
-Cerca de 2,9 s para os 493 MB.
+```
+java -Xmx128m -cp target/classes br.com.zenon.ReportMain en
 
-### Até onde a memória desce
+Total lines: 6,362,620
+Total frauds: 8,213
+Total transacted value: $1,144,392,944,759.77
+```
 
-| `-Xmx` | Resultado |
+Sem argumento, o relatório sai em português.
+
+Vale comparar as duas saídas com atenção. Além do texto traduzido, mudaram o separador de milhar (`.` contra `,`), o separador decimal (`,` contra `.`), o símbolo monetário e até a posição dele: `R$ 1.144…` com espaço antes do número, `$1,144…` sem. Nenhuma dessas regras está no código — todas vêm do `Locale`.
+
+### Estrutura
+
+| Arquivo | Papel |
 |---|---|
-| `128m` (pedido pelo enunciado) | ✅ |
-| `32m` | ✅ |
-| `16m` | ✅ |
-| `8m` | ✅ |
-
-Os mesmos três números, sobre o mesmo arquivo, com **8 MB de heap** — cerca de 1,6% do tamanho do arquivo. O consumo não acompanha o arquivo porque o que ocupa memória é o buffer de leitura, a linha corrente e três acumuladores: um custo constante, independente de o arquivo ter 500 MB ou 500 GB.
+| `src/main/resources/report_pt.properties` | cabeçalhos em português |
+| `src/main/resources/report_en.properties` | cabeçalhos em inglês |
+| `ReportMain` | resolve o `Locale`, carrega o bundle e formata os números |
 
 ### Decisões de implementação
 
-**`BigDecimal` no total, não `double`.** Não é preciosismo, e dá para provar. Uma soma de controle das 6.362.620 parcelas feita em ponto flutuante devolveu `1144392944759.72` — cinco centavos **a menos** que o valor exato. O erro não está em nenhuma parcela isolada: é o acúmulo de milhões de arredondamentos binários. O `BigDecimal` chega no `...759.77` do enunciado porque não arredonda a cada soma.
+**Idioma e país são eixos independentes.** Os bundles são nomeados apenas pelo idioma (`report_pt`), mas os `Locale` do código trazem o país (`pt-BR`, `en-US`). Não é inconsistência, é a separação correta: traduzir texto é questão de **idioma**, enquanto moeda e separadores são questão de **país**. Existe português de Portugal com euro e português do Brasil com real, com o mesmo texto traduzido.
 
-**O `try`-com-recursos não é opcional.** O stream de `Files.lines` mantém um descritor de arquivo aberto, e fechar o stream é o que o libera. Sem o `try`-com-recursos o descritor vaza até o fim do processo — um defeito que não aparece em teste, porque o programa termina logo depois.
+E o país não é dispensável aqui: `NumberFormat.getCurrencyInstance` para um locale só de idioma não tem como saber qual é a moeda, e cai no símbolo genérico em vez de `R$` ou `$`. A cadeia de resolução do `ResourceBundle` liga as duas pontas sozinha — para `pt-BR` ele procura `report_pt_BR`, não encontra, e aceita `report_pt`.
 
-**Redução mutável em vez de `reduce`.** O `collect` de três argumentos — fornecedor, acumulador, combinador — é a forma prevista pela Stream API para acumular em um objeto mutável. Um `reduce` sobre um valor imutável criaria um objeto novo por linha, 6,3 milhões deles sem necessidade. Preferir isso a um `forEach` sobre variável externa também é deliberado: aqui o estado mutável pertence à redução, não ao escopo que a chama.
+**O argumento é validado antes de chegar ao `ResourceBundle`.** Diante de um idioma sem bundle, `getBundle` **não** falha: ele recorre ao locale padrão da JVM. Em uma máquina configurada em português, pedir `fr` imprimiria o relatório em português como se estivesse tudo certo — o pior tipo de defeito, o que não se anuncia. Validar antes troca o erro silencioso por uma mensagem explícita:
 
-**Apenas duas colunas são lidas.** O relatório não tem o que fazer com saldos, nomes de clientes ou tipo da operação, então não monta uma `Transaction`.
+```
+java -cp target/classes br.com.zenon.ReportMain fr
 
-Vale separar duas coisas que o erro do item 2 costuma confundir: o problema era a **retenção**, não a criação de objetos. Montar e descartar milhões de objetos de vida curta é algo que o coletor de lixo faz bem — construir as 6,3 milhões de `Transaction` e jogá-las fora caberia nos 128 MB. O que não cabe é mantê-las todas referenciadas. Ler só duas colunas economiza trabalho, não memória.
+java.lang.IllegalArgumentException: idioma não suportado: fr — use pt, en
+```
 
-**Uma classe de entrada separada.** A `Main` carrega transações em uma lista para analisá-las e consultá-las, e por isso trabalha sobre uma fatia do arquivo. Juntar as duas na mesma classe apagaria o contraste que a tarefa quer mostrar: a `Main` precisa do limite, a `ReportMain` não.
+**`.properties` em UTF-8, sem escapes.** Desde o Java 9 o `ResourceBundle` lê `.properties` como UTF-8, com recuo automático para ISO-8859-1. Em Java 8 os acentos precisariam ser escritos como `\uXXXX`, e um arquivo UTF-8 apareceria corrompido na saída.
 
+**`toLowerCase(Locale.ROOT)` na leitura do argumento.** Sem o locale explícito, o método usa o padrão da JVM. Em turco a minúscula de I é `ı`, sem ponto: com um locale `tr-TR`, `"IT".toLowerCase()` devolve `ıt`, que não casa com `it`. Com `pt` e `en` o problema não se manifesta, porque nenhum dos dois contém a letra I — a proteção é preventiva, para o dia em que a lista receber um `it` ou um `id`.
 
-### Como os números foram verificados
+**Os contadores também passam pelo `NumberFormat`.** O enunciado pede a formatação dos valores monetários; aplicá-la também a `totalLines` e `totalFrauds` é o que faz `6362620` virar `6.362.620` em português e `6,362,620` em inglês. Isso altera a saída em relação à tarefa 7, onde os contadores saíam sem separador de milhar.
 
-Não há suíte de testes no projeto: o `pom.xml` não declara dependências e `src/test/java` está vazia. Nenhuma das tarefas até aqui pediu testes automatizados.
+**Uma ressalva sobre a moeda.** Mostrar o mesmo total como `R$ 1.144.392.944.759,77` e `$1,144,392,944,759.77` é o que o enunciado pede, e está correto como exercício de formatação. Mas afirma que os dois valores são equivalentes, e eles não são: não há conversão de câmbio, e o PaySim não declara moeda alguma. Em um produto real o valor viajaria junto com a sua moeda de origem, e a localização formataria sem reinterpretar quanto ele vale.
 
-A conferência foi feita por **oráculo independente**: os três totais foram recalculados varrendo o CSV com `awk`, fora da JVM, e comparados com a saída do programa. Duas implementações que não compartilham uma linha de código chegando ao mesmo número é evidência mais forte do que um teste que afirma um valor copiado da própria saída que ele deveria checar.
+**Cabeçalhos no bundle, não frases inteiras.** O enunciado pede o bundle "para cabeçalhos", e é isso que está lá: o código monta `cabeçalho + ": " + valor`. Para um produto, a frase inteira com um `{0}` e `MessageFormat` seria melhor, porque pontuação e ordem das palavras variam por idioma — em francês, por exemplo, usa-se espaço antes dos dois-pontos.
 
-Foi essa checagem que expôs o problema do `double`. A primeira soma de controle, feita em ponto flutuante, devolveu `1144392944759.72`; refeita em centavos inteiros, devolveu `1144392944759.77` — o valor do enunciado, e o que o `BigDecimal` produz.
+### Como foi verificado
+
+| Cenário | Resultado |
+|---|---|
+| `pt` e sem argumento | texto e formato em português do Brasil |
+| `en` | texto e formato em inglês dos Estados Unidos |
+| `EN`, em maiúscula | aceito |
+| `fr` | `IllegalArgumentException` com a lista de idiomas atendidos |
+| locale padrão `tr-TR` com argumento `EN` | funciona |
+
+A última linha merece uma ressalva honesta: ela **não** prova nada sobre o bug do I turco, porque `EN` não contém a letra I. Para verificar a afirmação testei o comportamento isoladamente — em um locale `tr-TR`, `"IT"` e `"ID"` viram `ıt` e `ıd` e deixam de casar com `it` e `id`, enquanto `EN` e `PT` saem idênticos nos dois locales.
 
 ### Execução
-
-O enunciado pede a execução **pela IDE**, com o limite de memória passado como VM Argument.
 
 #### No IntelliJ
 
@@ -125,24 +114,23 @@ O enunciado pede a execução **pela IDE**, com o limite de memória passado com
 | Campo | Valor |
 |---|---|
 | Main class | `br.com.zenon.ReportMain` |
+| Program arguments | `pt` ou `en` |
 | VM options | `-Xmx128m` |
 | Working directory | a pasta `zenon-fraud-detector` |
 
 O **working directory** importa: os caminhos dos CSVs são relativos a ele. Com a raiz do repositório selecionada, a leitura falha com `NoSuchFileException`.
 
-Vale marcar *Store as project file*, para que a configuração fique em `.run/` e seja versionada. O padrão do IntelliJ é gravar em `.idea/`, que este repositório ignora (`.gitignore`, linha 35): ali a configuração existiria apenas na máquina de quem a criou.
+Vale marcar *Store as project file*, para que a configuração fique em `.run/` e seja versionada. O padrão do IntelliJ é gravar em `.idea/`, que este repositório ignora (`.gitignore`, linha 35): ali ela existiria apenas na máquina de quem a criou.
 
 #### Pelo terminal
 
 ```bash
 cd zenon-fraud-detector
 mvn -q clean compile
-java -Xmx128m -cp target/classes br.com.zenon.ReportMain
+java -Xmx128m -cp target/classes br.com.zenon.ReportMain en
 ```
 
-#### Reproduzindo o `OutOfMemoryError` do item 2
-
-Trocar `LAST_LINE_TO_READ` por `Integer.MAX_VALUE` e executar `br.com.zenon.Main` com `-Xmx128m`, pela IDE ou pelo terminal. Devolver o limite a `100_001` em seguida, como o enunciado pede.
+Os `.properties` precisam estar em `src/main/resources` para que o Maven os copie para `target/classes`; fora dali o `ResourceBundle` não os encontra.
 
 Os CSVs ficam em `data/` e não são versionados.
 
