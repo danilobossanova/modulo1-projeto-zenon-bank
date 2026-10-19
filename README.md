@@ -23,52 +23,76 @@ Siga o passo a passo do quadro de atividades (Trello) do projeto prático dessa 
 
 ---
 
-## ✅ Tarefa 4 — Tratamento de erros
+## ✅ Tarefa 5 — Stream API
 
-Leitura de um CSV com linhas corrompidas: as inválidas são registradas e descartadas, sem abortar o processamento.
+Processamento declarativo de coleções: cinco análises de fraude sobre as 50.000 primeiras transações do CSV, construídas com a Stream API.
 
-### Checklist do enunciado
+### O que o enunciado pediu
 
 | # | Requisito | Status |
 |---|---|---|
-| 1 | Branch `tarefa/04-tratamento-erros` | ✅ |
-| 2 | `paysim_with_bad_data.csv` na pasta `data` | ✅ |
-| 3 | Validações impedindo instâncias inválidas de `Transaction` | ✅ ¹ |
-| 4 | `Main` imprime a quantidade e todas as transações | ✅ |
-| 5 | Linha inválida é logada em `System.err` e a leitura continua | ✅ ² |
+| 1 | Branch `tarefa/05-streams`, com commit e push da entrega | ✅ |
+| 2 | Carregar 50.000 linhas em `TransactionIngestor` e criar a classe `FraudAnalyzer` usando a Stream API | ✅ ¹ |
+| 2.1 | Apenas transações com `isFraud == true`, imprimindo o tamanho da lista | ✅ |
+| 2.2 | As 3 fraudes de maior valor (`amount`) | ✅ |
+| 2.3 | Os nomes de origem (`nameOrig`) dessas fraudes, sem repetições, nos 5 maiores suspeitos | ✅ |
+| 2.4 | Prejuízo total causado pelas fraudes (soma dos `amount`) | ✅ |
+| 2.5 | Quantas fraudes ocorreram por tipo de transação | ✅ |
+| 3 | `Main` invoca cada um dos métodos e imprime os resultados | ✅ ² |
 
-¹ Distribuídas entre `Transaction` (`step`, `amount`, nulos) e `TransactionCustomer` (`name`, saldos), seguindo o agrupamento dos dados de cliente feito na modelagem.
-² Saída conferida contra o exemplo do enunciado: 17 linhas idênticas, mesma ordem.
+¹ `LAST_LINE_TO_READ = 50_001`: o cabeçalho mais 50.000 linhas de dados. Mantém a interpretação adotada na tarefa 3, de que o limite se refere a transações e não a linhas do arquivo.
 
-### Regras de validação
+² Saída conferida contra o exemplo do enunciado: as 15 linhas são idênticas, na mesma ordem.
 
-| Regra | Mensagem |
-|---|---|
-| `step` menor que 1 | `step should be positive: -1` |
-| `amount` negativo | `amount should be positive: -50.00` |
-| `oldBalance` negativo | `oldBalance should be positive: -100.00` |
-| `newBalance` negativo | `newBalance should be positive: -150.00` |
-| nome vazio ou em branco | `name should not be empty` |
-| qualquer valor nulo | `NullPointerException` via `Objects.requireNonNull` |
-| `type` fora do enum | mensagem do próprio `valueOf` |
+### O que foi implementado
 
-Zero é aceito em todos os campos numéricos; apenas negativos são rejeitados.
+Cada item virou um método de `FraudAnalyzer`. A classe recebe a lista já carregada e não conhece o formato do arquivo — não lê nada, apenas consulta:
 
-### Tratamento de erros com `Optional`
+| Item | Método | Operações da Stream API |
+|---|---|---|
+| 2.1 | `countFrauds()` | `filter` + `count` |
+| 2.2 | `findHighestValueFrauds(limit)` | `filter` + `sorted` + `limit` |
+| 2.3 | `findTopSuspectOrigins(limit)` | `filter` + `sorted` + `map` + `distinct` + `limit` |
+| 2.4 | `totalFraudLoss()` | `filter` + `map` + `reduce` |
+| 2.5 | `countFraudsByType()` | `filter` + `collect(groupingBy + counting)` |
 
-`TransactionLineParser.tryParse` devolve `Optional<Transaction>`: vazio quando a linha é inválida. As implementações de `TransactionIngestor` consomem assim:
+Como lembra a nota do enunciado, um stream não pode ser reutilizado: cada método abre o seu próprio a partir da mesma `List<Transaction>`. O arquivo é lido uma única vez, na `Main`.
 
-```java
-TransactionLineParser.tryParse(line).ifPresent(transactions::add);
+### Saída
+
+```
+1. Total de Fraudes: 100
+2. Top 3 Fraudes de Maior Valor:
+10000000.00
+10000000.00
+5460002.91
+3. Clientes Suspeitos:
+C7162498
+C351297720
+C666654362
+C1588880909
+C2047521920
+4. Prejuízo Total: 57393771.84
+5. Fraudes por Tipo:
+ - CASH_OUT: 51
+ - TRANSFER: 49
 ```
 
-O tipo de retorno obriga quem chama a lidar com a ausência — não há `null` circulando nem exceção interrompendo a leitura. O registro do erro sai em `System.err` no formato `Erro: <linha> | <exceção>`.
+### Decisões de implementação
 
-### Decisão revista
+**Ordenação por `compareTo`, não por `equals`.** O CSV traz alguns valores em notação científica (`1.0E7`). Para o `equals` do `BigDecimal`, `1.0E7` e `10000000.00` são valores diferentes, porque ele compara também o *scale*. O `compareTo` compara apenas o valor numérico, e é o que coloca as duas fraudes de dez milhões no topo da linha 2 da saída.
 
-Na tarefa 2, a validação de saldo negativo foi deixada de fora por não ser possível verificar se o dataset real continha esses valores — o arquivo disponível na época estava corrompido. Com o arquivo completo, a varredura das 6.362.620 linhas encontrou **zero valores negativos** em todas as colunas numéricas. A validação agora exigida pelo enunciado é segura e não afeta a leitura do arquivo real.
+**`setScale(2)` antes do `toPlainString()` na impressão.** São dois problemas distintos do mesmo dado: `toPlainString` desfaz o formato exponencial, mas o *scale* negativo de `1.0E7` ainda imprimiria `10000000`, sem casas decimais. O `setScale(2)` fecha a diferença com o enunciado.
 
-Permanece fora a validação de coerência entre saldos e valor (`newBalance == oldBalance - amount`): essa inconsistência existe no PaySim real e faz parte do sinal de fraude.
+**Ordenação antes do `distinct()` no item 2.3.** Os "5 maiores clientes suspeitos" são os das maiores fraudes, não os 5 primeiros a aparecer no arquivo. Ordenar por `amount` antes de reduzir aos nomes é o que garante isso.
+
+**`EnumMap` no `groupingBy` do item 2.5.** O `groupingBy` devolve um `HashMap`, cuja ordem de iteração não é garantida. A sobrecarga de três argumentos aceita uma fábrica de mapa: com `EnumMap`, a saída segue a ordem de declaração de `TransactionType` e `CASH_OUT` sai antes de `TRANSFER`, como no enunciado.
+
+Só aparecem os tipos com ao menos uma fraude. O `groupingBy` não cria chave para grupo vazio, então `CASH_IN`, `DEBIT` e `PAYMENT` ficam fora do mapa em vez de sair com zero.
+
+### Organização da `Main`
+
+Cada item do enunciado virou um método privado de impressão, de modo que `main` se leia como o roteiro da tarefa. Os limites pedidos são constantes nomeadas (`TOP_FRAUDES`, `TOP_SUSPEITOS`) e a formatação monetária tem um ponto único. A `Main` orquestra e formata; as análises ficam em `FraudAnalyzer` e a leitura em `TransactionIngestor`.
 
 ### Execução
 
@@ -79,3 +103,5 @@ java -cp target/classes br.com.zenon.Main
 ```
 
 Os CSVs ficam em `data/` e não são versionados.
+
+O projeto exige **JDK 25**: a `Main` usa o método de instância `void main()` e `IO.println`, finalizados nessa versão. Se o item 4 aparecer como `Prejuzo`, o console está lendo como UTF-8 o que a JVM escreveu no code page do Windows; nesse caso rode com `-Dstdout.encoding=UTF-8`.
