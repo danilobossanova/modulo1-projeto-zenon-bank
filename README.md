@@ -105,7 +105,34 @@ Vale separar duas coisas que o erro do item 2 costuma confundir: o problema era 
 
 **Uma classe de entrada separada.** A `Main` carrega transações em uma lista para analisá-las e consultá-las, e por isso trabalha sobre uma fatia do arquivo. Juntar as duas na mesma classe apagaria o contraste que a tarefa quer mostrar: a `Main` precisa do limite, a `ReportMain` não.
 
+
+### Como os números foram verificados
+
+Não há suíte de testes no projeto: o `pom.xml` não declara dependências e `src/test/java` está vazia. Nenhuma das tarefas até aqui pediu testes automatizados.
+
+A conferência foi feita por **oráculo independente**: os três totais foram recalculados varrendo o CSV com `awk`, fora da JVM, e comparados com a saída do programa. Duas implementações que não compartilham uma linha de código chegando ao mesmo número é evidência mais forte do que um teste que afirma um valor copiado da própria saída que ele deveria checar.
+
+Foi essa checagem que expôs o problema do `double`. A primeira soma de controle, feita em ponto flutuante, devolveu `1144392944759.72`; refeita em centavos inteiros, devolveu `1144392944759.77` — o valor do enunciado, e o que o `BigDecimal` produz.
+
 ### Execução
+
+O enunciado pede a execução **pela IDE**, com o limite de memória passado como VM Argument.
+
+#### No IntelliJ
+
+`Run → Edit Configurations → + → Application`:
+
+| Campo | Valor |
+|---|---|
+| Main class | `br.com.zenon.ReportMain` |
+| VM options | `-Xmx128m` |
+| Working directory | a pasta `zenon-fraud-detector` |
+
+O **working directory** importa: os caminhos dos CSVs são relativos a ele. Com a raiz do repositório selecionada, a leitura falha com `NoSuchFileException`.
+
+Vale marcar *Store as project file*, para que a configuração fique em `.run/` e seja versionada. O padrão do IntelliJ é gravar em `.idea/`, que este repositório ignora (`.gitignore`, linha 35): ali a configuração existiria apenas na máquina de quem a criou.
+
+#### Pelo terminal
 
 ```bash
 cd zenon-fraud-detector
@@ -113,7 +140,9 @@ mvn -q clean compile
 java -Xmx128m -cp target/classes br.com.zenon.ReportMain
 ```
 
-Para reproduzir o item 2, trocar `LAST_LINE_TO_READ` por `Integer.MAX_VALUE` e rodar `br.com.zenon.Main` com `-Xmx128m`.
+#### Reproduzindo o `OutOfMemoryError` do item 2
+
+Trocar `LAST_LINE_TO_READ` por `Integer.MAX_VALUE` e executar `br.com.zenon.Main` com `-Xmx128m`, pela IDE ou pelo terminal. Devolver o limite a `100_001` em seguida, como o enunciado pede.
 
 Os CSVs ficam em `data/` e não são versionados.
 
