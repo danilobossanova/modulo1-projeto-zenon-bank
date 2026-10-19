@@ -54,4 +54,24 @@ public class TransactionListRepository implements TransactionRepository {
                 .filter(transaction -> transaction.origin().name().equals(originName))
                 .findFirst();
     }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Acrescenta a transação ao fim da lista recebida no construtor. Como essa lista não é
+     * copiada — decisão documentada na classe —, a gravação é visível para quem a passou. Não
+     * é efeito colateral acidental: é a consequência de o repositório ser uma vista sobre a
+     * coleção de outro, e está registrado aqui para que não surpreenda.
+     *
+     * <p>Acrescentar ao fim também é o que preserva a regra de que a busca devolve a primeira
+     * ocorrência: uma transação gravada agora nunca passa à frente de uma que já existia.
+     *
+     * @throws UnsupportedOperationException se a lista recebida for imutável, como as devolvidas
+     *                                       por {@code List.of}
+     */
+    @Override
+    public void save(Transaction transaction) {
+        Objects.requireNonNull(transaction, "transaction should not be null");
+        transactions.add(transaction);
+    }
 }

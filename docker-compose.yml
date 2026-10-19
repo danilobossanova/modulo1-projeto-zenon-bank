@@ -1,0 +1,42 @@
+# MySQL local para a tarefa 9. Credenciais de desenvolvimento, sem valor fora desta máquina.
+#
+#   docker compose up -d      sobe o banco
+#   docker compose down       para o banco, preservando os dados
+#   docker compose down -v    para o banco e apaga o volume, forçando o script.sql a rodar
+#                             de novo na próxima subida
+#
+# Não há chave "version": ela é obsoleta no Compose v2 em diante e só gera aviso.
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: zenon-mysql
+    restart: unless-stopped
+
+    environment:
+      MYSQL_ROOT_PASSWORD: zenon-root-dev
+      MYSQL_DATABASE: zenon
+      MYSQL_USER: zenon
+      MYSQL_PASSWORD: zenon-dev
+
+    ports:
+      - "3306:3306"
+
+    volumes:
+      # O MySQL executa os .sql deste diretório em ordem alfabética, mas somente quando o
+      # diretório de dados está vazio — ou seja, na primeira subida do volume.
+      - ./script.sql:/docker-entrypoint-initdb.d/01-script.sql:ro
+      - zenon-mysql-data:/var/lib/mysql
+
+    # O container responde na porta antes de o servidor aceitar conexões. Sem o healthcheck,
+    # subir o banco e rodar a aplicação em seguida falha com "Communications link failure"
+    # de forma intermitente, dependendo de quanto a máquina demorou para inicializar o MySQL.
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  zenon-mysql-data:

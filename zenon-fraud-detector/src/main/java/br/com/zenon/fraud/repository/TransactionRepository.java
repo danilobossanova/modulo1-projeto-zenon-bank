@@ -34,4 +34,24 @@ public interface TransactionRepository {
      * @return a transação, ou vazio se nenhuma tiver essa origem
      */
     Optional<Transaction> findByOriginName(String originName);
+
+    /**
+     * Grava uma transação no repositório.
+     *
+     * <p>Note que o método não declara {@code throws SQLException}, embora a implementação em
+     * banco só possa falhar por motivos de SQL. Declará-la aqui espalharia JDBC por uma
+     * interface que também é implementada por coleções em memória, e obrigaria quem usa a
+     * lista a tratar uma exceção que nunca pode ocorrer. A implementação de banco converte a
+     * exceção checada em {@link DataAccessException}; é o que mantém este contrato livre da
+     * tecnologia que o atende.
+     *
+     * <p>Cada implementação documenta o que "gravar" significa para a sua estrutura. Em
+     * particular, as implementações em memória gravam na coleção que receberam no construtor,
+     * e portanto são visíveis para quem passou essa coleção.
+     *
+     * @param transaction a transação a gravar
+     * @throws NullPointerException se a transação for nula
+     * @throws DataAccessException  se a gravação falhar
+     */
+    void save(Transaction transaction);
 }

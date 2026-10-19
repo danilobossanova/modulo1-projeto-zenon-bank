@@ -12,6 +12,57 @@
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <mysql.connector.version>9.4.0</mysql.connector.version>
     </properties>
+
+    <dependencies>
+        <!--
+            Driver JDBC do MySQL. O artefato mudou de nome: mysql:mysql-connector-java foi
+            descontinuado e substituido por com.mysql:mysql-connector-j. Tutoriais antigos
+            ainda citam o nome velho, que nao recebe mais atualizacoes.
+
+            Escopo runtime, e nao compile: nenhuma classe do projeto importa o driver. O
+            java.sql.DriverManager o encontra sozinho pelo ServiceLoader, bastando que o jar
+            esteja no classpath em tempo de execucao. Com escopo compile, um import acidental
+            de classe do driver compilaria e amarraria o codigo ao MySQL.
+        -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <version>${mysql.connector.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                Copia as dependencias para target/dependency, de modo que a aplicacao possa
+                ser executada pelo terminal sem montar o classpath a mao:
+
+                    java -cp "target/classes;target/dependency/*" br.com.zenon.DBMain
+
+                Pela IDE nao e necessario: o IntelliJ monta o classpath a partir do pom.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.8.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency</outputDirectory>
+                            <includeScope>runtime</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 
 </project>

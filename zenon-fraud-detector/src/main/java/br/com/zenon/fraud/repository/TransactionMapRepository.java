@@ -67,4 +67,20 @@ public class TransactionMapRepository implements TransactionRepository {
     public Optional<Transaction> findByOriginName(String originName) {
         return Optional.ofNullable(index.get(originName));
     }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Indexa a transação pelo nome do cliente de origem, preservando a entrada existente
+     * quando já houver uma. O {@code putIfAbsent} não é detalhe de estilo: é o que mantém a
+     * regra de que a primeira ocorrência vence — a mesma que a função de merge garante na
+     * construção do índice e que o {@code findFirst} garante na implementação de lista. Um
+     * {@code put} comum faria esta implementação divergir das outras duas assim que um nome
+     * de origem repetisse.
+     */
+    @Override
+    public void save(Transaction transaction) {
+        Objects.requireNonNull(transaction, "transaction should not be null");
+        index.putIfAbsent(transaction.origin().name(), transaction);
+    }
 }
