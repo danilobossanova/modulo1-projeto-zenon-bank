@@ -28,7 +28,7 @@ public interface TransactionIngestor {
      * <p>Limite temporário, declarado aqui para que as três implementações leiam a mesma
      * fatia do arquivo e seus resultados sejam comparáveis.
      */
-    int LAST_LINE_TO_READ = 1001;
+    int LAST_LINE_TO_READ = 50_001;
 
     /**
      * Lê o arquivo e devolve as transações encontradas, na ordem em que aparecem.
