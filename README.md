@@ -23,114 +23,131 @@ Siga o passo a passo do quadro de atividades (Trello) do projeto prático dessa 
 
 ---
 
-## ✅ Tarefa 8 — Internacionalização do relatório
+## ✅ Tarefa 9 — JDBC e MySQL: a importância da inserção em lote
 
-O relatório de fraudes exportável em português ou inglês: texto, moeda e formato dos números conforme o idioma escolhido pelo usuário.
+As transações saem do CSV e vão para um MySQL real, em Docker, com o tempo de inserção medido em três caminhos diferentes.
 
 ### O que o enunciado pediu
 
 | # | Requisito | Status |
 |---|---|---|
-| 1 | Branch `tarefa/08-i18n`, com commit e push da entrega | 🚧 ¹ |
-| 2 | `ReportMain` internacionalizada para português e inglês | ✅ |
-| 2.1 | Bundles `report_pt.properties` e `report_en.properties`, com `ResourceBundle` para os cabeçalhos | ✅ |
-| 2.2 | Valores monetários formatados com `NumberFormat` conforme o `Locale` | ✅ |
-| 2.3 | Argumento em que o usuário escolhe entre português e inglês | ✅ |
+| 1 | Branch `tarefa/09-jdbc`, com commit e push da entrega | 🚧 ¹ |
+| 2 | `docker-compose.yml` subindo o MySQL com Docker | ✅ |
+| 3 | `script.sql` criando a tabela `TRANSACTIONS`, executado no MySQL | ✅ ² |
+| 4 | Driver do MySQL no `pom.xml`; `TransactionSQLRepository` implementando `TransactionRepository` com `findByOriginName`; `save(Transaction)` na interface e em todas as implementações | ✅ |
+| 5 | `DBMain` lendo 10 mil transações do CSV, inserindo no banco, medindo o tempo e buscando `C1231006815` e `C12345` | ✅ |
 
 ¹ Branch criada e commits da entrega feitos. O push é o passo que fecha a tarefa.
 
-### Resultado
+² O `docker-compose.yml` monta o `script.sql` em `/docker-entrypoint-initdb.d`, então o MySQL o executa sozinho na primeira subida do volume. Conferido com `DESCRIBE TRANSACTIONS` e `SHOW INDEX`.
+
+### A medição
+
+O número que a tarefa pede é o da última linha. As outras duas estão aqui porque "742 ms" não significa nada sozinho: rápido ou lento só existe em comparação com algo.
+
+| Caminho | 10.000 linhas | Por linha | Ganho |
+|---|---|---|---|
+| Uma a uma, com autocommit | ~61 s ³ | ~6.071 µs | — |
+| Em lote, **sem** `rewriteBatchedStatements` | 14.687 ms | 1.468 µs | 4x |
+| Em lote, **com** `rewriteBatchedStatements` | **522–742 ms** | 52–74 µs | **~100x** |
+
+³ Extrapolado de uma amostra de 1.000 linhas. O custo por linha desse caminho é constante, então rodar as 10.000 consumiria um minuto por execução sem acrescentar informação.
+
+A linha do meio é o achado da tarefa. O código das duas últimas é **idêntico** — mesmo `addBatch`, mesmo `executeBatch`, mesma transação de banco. Só a URL de conexão muda. Sem o parâmetro, o driver do MySQL aceita o lote e ainda assim envia uma instrução por vez: sobra um ganho de 4x em vez de 100x, e nenhum erro avisa que isso está acontecendo.
+
+Ou seja: **usar `addBatch` não garante que você está inserindo em lote.** Um código que parece correto entrega 25 vezes menos do que poderia, por causa de um parâmetro de conexão.
+
+### A saída
 
 ```
-java -Xmx128m -cp target/classes br.com.zenon.ReportMain pt
+Transações lidas do CSV: 10000
 
-Total de linhas: 6.362.620
-Total de fraudes: 8.213
-Valor total transacionado: R$ 1.144.392.944.759,77
+--- Inserção de 10,000 transações ---
+Uma a uma (amostra de 1,000 linhas): 6,071 µs por linha
+Em lote (carga completa):  742 ms no total, 74 µs por linha
+O lote é 81x mais rápido por linha
+Linhas na tabela após a carga: 10,000
+
+--- Busca no MySQL ---
+Transaction[step=1, type=PAYMENT, amount=9839.64, origin=TransactionCustomer[name=C1231006815, oldBalance=170136.00, newBalance=160296.36], recipient=TransactionCustomer[name=M1979787155, oldBalance=0.00, newBalance=0.00], isFraud=false, isFlaggedFraud=false]
+Transação não encontrada para o cliente C12345
 ```
-
-```
-java -Xmx128m -cp target/classes br.com.zenon.ReportMain en
-
-Total lines: 6,362,620
-Total frauds: 8,213
-Total transacted value: $1,144,392,944,759.77
-```
-
-Sem argumento, o relatório sai em português.
-
-Vale comparar as duas saídas com atenção. Além do texto traduzido, mudaram o separador de milhar (`.` contra `,`), o separador decimal (`,` contra `.`), o símbolo monetário e até a posição dele: `R$ 1.144…` com espaço antes do número, `$1,144…` sem. Nenhuma dessas regras está no código — todas vêm do `Locale`.
 
 ### Estrutura
 
 | Arquivo | Papel |
 |---|---|
-| `src/main/resources/report_pt.properties` | cabeçalhos em português |
-| `src/main/resources/report_en.properties` | cabeçalhos em inglês |
-| `ReportMain` | resolve o `Locale`, carrega o bundle e formata os números |
+| `docker-compose.yml` | MySQL 8.4, com healthcheck e o `script.sql` como init |
+| `script.sql` | tabela `TRANSACTIONS` e o índice em `name_orig` |
+| `TransactionSQLRepository` | a terceira implementação de `TransactionRepository` |
+| `DataAccessException` | converte `SQLException` em não checada |
+| `DBMain` | lê o CSV, carrega o banco, mede e consulta |
 
 ### Decisões de implementação
 
-**Idioma e país são eixos independentes.** Os bundles são nomeados apenas pelo idioma (`report_pt`), mas os `Locale` do código trazem o país (`pt-BR`, `en-US`). Não é inconsistência, é a separação correta: traduzir texto é questão de **idioma**, enquanto moeda e separadores são questão de **país**. Existe português de Portugal com euro e português do Brasil com real, com o mesmo texto traduzido.
+**`setAutoCommit(false)` economiza por um motivo diferente do lote.** O lote corta idas e voltas de rede; o autocommit desligado troca 10.000 transações de banco por uma. Com autocommit, cada inserção precisa estar durável em disco antes de a próxima começar, e o gargalo passa a ser `fsync`, não rede. É o que explica os 6 ms por linha do primeiro caminho: não é o MySQL sendo lento, é o disco sendo honesto.
 
-E o país não é dispensável aqui: `NumberFormat.getCurrencyInstance` para um locale só de idioma não tem como saber qual é a moeda, e cai no símbolo genérico em vez de `R$` ou `$`. A cadeia de resolução do `ResourceBundle` liga as duas pontas sozinha — para `pt-BR` ele procura `report_pt_BR`, não encontra, e aceita `report_pt`.
+**O índice em `name_orig` é a tarefa 6 em SQL.** Sem ele, `findByOriginName` vira varredura completa da tabela — O(n), exatamente o que o `TransactionListRepository` faz em memória. Com ele, o MySQL percorre uma árvore B+. A estrutura de dados continua decidindo o custo da busca; só mudou de lado.
 
-**O argumento é validado antes de chegar ao `ResourceBundle`.** Diante de um idioma sem bundle, `getBundle` **não** falha: ele recorre ao locale padrão da JVM. Em uma máquina configurada em português, pedir `fr` imprimiria o relatório em português como se estivesse tudo certo — o pior tipo de defeito, o que não se anuncia. Validar antes troca o erro silencioso por uma mensagem explícita:
+**`DECIMAL`, nunca `DOUBLE`.** É a decisão do `BigDecimal` estendida ao armazenamento: guardar dinheiro em ponto flutuante binário desfaria na gravação a exatidão que o código mantém em memória.
 
-```
-java -cp target/classes br.com.zenon.ReportMain fr
+Isso tem uma consequência que vale registrar. Compare a saída da busca com a linha do CSV: o arquivo traz `170136.0`, o banco devolve `170136.00`. A coluna é `DECIMAL(18,2)` e o MySQL normaliza a escala para 2. Como `BigDecimal.equals` compara **também a escala**, a `Transaction` que volta do banco **não é `equals`** à que saiu do CSV, embora represente o mesmo dado. É o mesmo `equals` contra `compareTo` da tarefa 5, reaparecendo na camada de persistência.
 
-java.lang.IllegalArgumentException: idioma não suportado: fr — use pt, en
-```
+**`DataAccessException` mantém a interface livre de JDBC.** `SQLException` é checada. Declará-la em `TransactionRepository.save` espalharia JDBC por um contrato que também é implementado por uma `List` e um `Map`, e obrigaria quem usa as versões em memória a tratar uma exceção que ali nunca pode ocorrer. A conversão para não checada é o que permite ao contrato falar de transações, e não da tecnologia que as guarda. A causa original nunca é descartada.
 
-**`.properties` em UTF-8, sem escapes.** Desde o Java 9 o `ResourceBundle` lê `.properties` como UTF-8, com recuo automático para ISO-8859-1. Em Java 8 os acentos precisariam ser escritos como `\uXXXX`, e um arquivo UTF-8 apareceria corrompido na saída.
+**`ORDER BY id LIMIT 1` na busca.** Sem o `ORDER BY`, o MySQL pode devolver as linhas em qualquer ordem, e com nomes de origem repetidos a resposta passaria a depender do plano de execução daquele momento. Como `id` é `AUTO_INCREMENT`, ordenar por ele é ordenar por ordem de inserção — a mesma "primeira ocorrência" que o `findFirst` devolve na lista e que o `putIfAbsent` preserva no mapa. As três implementações respondem a mesma transação para a mesma pergunta.
 
-**`toLowerCase(Locale.ROOT)` na leitura do argumento.** Sem o locale explícito, o método usa o padrão da JVM. Em turco a minúscula de I é `ı`, sem ponto: com um locale `tr-TR`, `"IT".toLowerCase()` devolve `ıt`, que não casa com `it`. Com `pt` e `en` o problema não se manifesta, porque nenhum dos dois contém a letra I — a proteção é preventiva, para o dia em que a lista receber um `it` ou um `id`.
+**`PreparedStatement` não é sobre desempenho.** Ele separa a instrução dos dados: o nome procurado viaja como parâmetro e nunca é concatenado ao SQL, o que torna injeção impossível por construção. Montar a consulta com concatenação deixaria o conteúdo do argumento decidir a estrutura do comando.
 
-**Os contadores também passam pelo `NumberFormat`.** O enunciado pede a formatação dos valores monetários; aplicá-la também a `totalLines` e `totalFrauds` é o que faz `6362620` virar `6.362.620` em português e `6,362,620` em inglês. Isso altera a saída em relação à tarefa 7, onde os contadores saíam sem separador de milhar.
+**`save` nas implementações em memória.** A de lista acrescenta ao fim da lista recebida no construtor — e como essa lista não é copiada, a gravação é visível para quem a passou. Não é descuido: é a consequência de o repositório ser uma vista sobre a coleção de outro, e está documentada no método. A de mapa usa `putIfAbsent`, e não `put`, para não divergir das outras duas quando um nome de origem repetir.
 
-**Uma ressalva sobre a moeda.** Mostrar o mesmo total como `R$ 1.144.392.944.759,77` e `$1,144,392,944,759.77` é o que o enunciado pede, e está correto como exercício de formatação. Mas afirma que os dois valores são equivalentes, e eles não são: não há conversão de câmbio, e o PaySim não declara moeda alguma. Em um produto real o valor viajaria junto com a sua moeda de origem, e a localização formataria sem reinterpretar quanto ele vale.
+**A conexão é recebida, não criada.** Quem abre é quem fecha, em `try`-com-recursos na `DBMain`. Mantém a simetria com as outras implementações, que também recebem no construtor a estrutura que vão consultar, sem assumir o ciclo de vida dela.
 
-**Cabeçalhos no bundle, não frases inteiras.** O enunciado pede o bundle "para cabeçalhos", e é isso que está lá: o código monta `cabeçalho + ": " + valor`. Para um produto, a frase inteira com um `{0}` e `MessageFormat` seria melhor, porque pontuação e ordem das palavras variam por idioma — em francês, por exemplo, usa-se espaço antes dos dois-pontos.
+**Sem `Class.forName`.** Desde o JDBC 4 o `DriverManager` localiza o driver pelo `ServiceLoader`, bastando o jar no classpath. O carregamento manual que os tutoriais antigos ensinam é ruído hoje.
+
+**O driver entra com escopo `runtime`.** Nenhuma classe do projeto importa o driver, e escopo `compile` permitiria que um import acidental amarrasse o código ao MySQL. O artefato também mudou de nome: `mysql:mysql-connector-java` foi descontinuado em favor de `com.mysql:mysql-connector-j`.
+
+**O limite do ingestor foi para 10.000**, como o item 5 pede. Isso muda a saída da `Main`: as análises das tarefas 5 e 6 passam a refletir 10.000 transações em vez de 100.000.
 
 ### Como foi verificado
 
 | Cenário | Resultado |
 |---|---|
-| `pt` e sem argumento | texto e formato em português do Brasil |
-| `en` | texto e formato em inglês dos Estados Unidos |
-| `EN`, em maiúscula | aceito |
-| `fr` | `IllegalArgumentException` com a lista de idiomas atendidos |
-| locale padrão `tr-TR` com argumento `EN` | funciona |
-
-A última linha merece uma ressalva honesta: ela **não** prova nada sobre o bug do I turco, porque `EN` não contém a letra I. Para verificar a afirmação testei o comportamento isoladamente — em um locale `tr-TR`, `"IT"` e `"ID"` viram `ıt` e `ıd` e deixam de casar com `it` e `id`, enquanto `EN` e `PT` saem idênticos nos dois locales.
+| `docker compose up -d` em máquina sem a imagem em cache | container saudável; tabela e índice criados pelo `script.sql` |
+| Carga de 10.000 em lote | 10.000 linhas na tabela, conferidas com `COUNT(*)` |
+| Busca por `C1231006815` | transação encontrada, com os valores do CSV |
+| Busca por `C12345` | `Optional` vazio e mensagem de não encontrado |
+| Lote sem `rewriteBatchedStatements` | 14.687 ms, contra 522–742 ms com o parâmetro |
 
 ### Execução
 
-#### No IntelliJ
+#### Subir o banco
 
-`Run → Edit Configurations → + → Application`:
+Da raiz do repositório:
 
-| Campo | Valor |
-|---|---|
-| Main class | `br.com.zenon.ReportMain` |
-| Program arguments | `pt` ou `en` |
-| VM options | `-Xmx128m` |
-| Working directory | a pasta `zenon-fraud-detector` |
+```bash
+docker compose up -d
+```
 
-O **working directory** importa: os caminhos dos CSVs são relativos a ele. Com a raiz do repositório selecionada, a leitura falha com `NoSuchFileException`.
+O healthcheck existe porque o container responde na porta antes de o servidor aceitar conexões. Sem esperar por ele, rodar a aplicação logo após subir o banco falha de forma intermitente com `Communications link failure`.
 
-Vale marcar *Store as project file*, para que a configuração fique em `.run/` e seja versionada. O padrão do IntelliJ é gravar em `.idea/`, que este repositório ignora (`.gitignore`, linha 35): ali ela existiria apenas na máquina de quem a criou.
+Para recriar a tabela do zero é preciso apagar o volume, porque o MySQL só executa o `script.sql` quando o diretório de dados está vazio:
 
-#### Pelo terminal
+```bash
+docker compose down -v && docker compose up -d
+```
+
+#### Rodar a aplicação
 
 ```bash
 cd zenon-fraud-detector
-mvn -q clean compile
-java -Xmx128m -cp target/classes br.com.zenon.ReportMain en
+mvn -q clean package
+java -cp "target/classes;target/dependency/*" br.com.zenon.DBMain
 ```
 
-Os `.properties` precisam estar em `src/main/resources` para que o Maven os copie para `target/classes`; fora dali o `ResourceBundle` não os encontra.
+O `package`, e não o `compile`, porque é ele que copia o driver para `target/dependency`. Pela IDE isso não é necessário: o IntelliJ monta o classpath a partir do `pom.xml`, e basta rodar `br.com.zenon.DBMain` com o working directory em `zenon-fraud-detector`.
+
+URL e credenciais podem ser sobrepostas por `ZENON_DB_URL`, `ZENON_DB_USER` e `ZENON_DB_PASSWORD`. Os valores padrão são os do banco local de desenvolvimento e não têm uso fora desta máquina.
 
 Os CSVs ficam em `data/` e não são versionados.
 
