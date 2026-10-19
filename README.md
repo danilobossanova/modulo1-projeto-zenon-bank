@@ -23,76 +23,72 @@ Siga o passo a passo do quadro de atividades (Trello) do projeto prático dessa 
 
 ---
 
-## ✅ Tarefa 5 — Stream API
+## ✅ Tarefa 6 — Complexidade algorítmica: List vs Map
 
-Processamento declarativo de coleções: cinco análises de fraude sobre as 50.000 primeiras transações do CSV, construídas com a Stream API.
+A mesma pergunta respondida por duas estruturas de dados sobre 100.000 transações, com os tempos medidos: busca linear contra busca indexada.
 
 ### O que o enunciado pediu
 
 | # | Requisito | Status |
 |---|---|---|
-| 1 | Branch `tarefa/05-streams`, com commit e push da entrega | ✅ |
-| 2 | Carregar 50.000 linhas em `TransactionIngestor` e criar a classe `FraudAnalyzer` usando a Stream API | ✅ ¹ |
-| 2.1 | Apenas transações com `isFraud == true`, imprimindo o tamanho da lista | ✅ |
-| 2.2 | As 3 fraudes de maior valor (`amount`) | ✅ |
-| 2.3 | Os nomes de origem (`nameOrig`) dessas fraudes, sem repetições, nos 5 maiores suspeitos | ✅ |
-| 2.4 | Prejuízo total causado pelas fraudes (soma dos `amount`) | ✅ |
-| 2.5 | Quantas fraudes ocorreram por tipo de transação | ✅ |
-| 3 | `Main` invoca cada um dos métodos e imprime os resultados | ✅ ² |
+| 1 | Branch `tarefa/06-benchmark`, com commit e push da entrega | 🚧 ¹ |
+| 2 | `TransactionIngestor` carregando 100.000 transações | ✅ ² |
+| 3 | `TransactionListRepository` buscando por cliente de origem e devolvendo `Optional<Transaction>`, testado na `Main` com valor existente e inexistente | ✅ ³ |
+| 4 | Busca pelo `nameOrig` da última transação (`C1868032458`), o pior caso, medida com `System.nanoTime()` | ✅ |
+| 5 | `TransactionRepository` abstraído em interface, com a classe de lista como implementação | ✅ |
+| 6 | Segunda implementação carregando em `Map<String, Transaction>`, com nova medição | ✅ |
 
-¹ `LAST_LINE_TO_READ = 50_001`: o cabeçalho mais 50.000 linhas de dados. Mantém a interpretação adotada na tarefa 3, de que o limite se refere a transações e não a linhas do arquivo.
+¹ Branch criada e commits da entrega feitos. O push é o passo que fecha a tarefa.
 
-² Saída conferida contra o exemplo do enunciado: as 15 linhas são idênticas, na mesma ordem.
+² `LAST_LINE_TO_READ = 100_001`: o cabeçalho mais as 100.000 linhas de dados, mantendo a interpretação das tarefas anteriores. O próprio enunciado confirma essa leitura — só com o cabeçalho fora da contagem é que `C1868032458` cai na última posição da lista, como o item 4 pressupõe. Contando o cabeçalho, a última seria `C707662966`.
 
-### O que foi implementado
+³ A linha impressa para `C1231006815` é o `toString()` gerado pelo record, sem formatação própria: idêntica ao exemplo do enunciado.
 
-Cada item virou um método de `FraudAnalyzer`. A classe recebe a lista já carregada e não conhece o formato do arquivo — não lê nada, apenas consulta:
+### Estrutura
 
-| Item | Método | Operações da Stream API |
-|---|---|---|
-| 2.1 | `countFrauds()` | `filter` + `count` |
-| 2.2 | `findHighestValueFrauds(limit)` | `filter` + `sorted` + `limit` |
-| 2.3 | `findTopSuspectOrigins(limit)` | `filter` + `sorted` + `map` + `distinct` + `limit` |
-| 2.4 | `totalFraudLoss()` | `filter` + `map` + `reduce` |
-| 2.5 | `countFraudsByType()` | `filter` + `collect(groupingBy + counting)` |
+| Arquivo | Papel |
+|---|---|
+| `TransactionRepository` | a interface: o contrato de busca, sem compromisso de custo |
+| `TransactionListRepository` | varredura linear, com `stream().filter().findFirst()` |
+| `TransactionMapRepository` | índice `Map<String, Transaction>` montado no construtor |
 
-Como lembra a nota do enunciado, um stream não pode ser reutilizado: cada método abre o seu próprio a partir da mesma `List<Transaction>`. O arquivo é lido uma única vez, na `Main`.
+A `Main` declara a variável como `TransactionRepository`, então o código de busca não sabe qual estrutura responde. É a mesma lição que a interface `TransactionIngestor` trouxe na tarefa 3, agora aplicada ao acesso aos dados: trocar a implementação não altera uma linha de quem consulta.
 
-### Saída
+### Resultado
 
 ```
-1. Total de Fraudes: 100
-2. Top 3 Fraudes de Maior Valor:
-10000000.00
-10000000.00
-5460002.91
-3. Clientes Suspeitos:
-C7162498
-C351297720
-C666654362
-C1588880909
-C2047521920
-4. Prejuízo Total: 57393771.84
-5. Fraudes por Tipo:
- - CASH_OUT: 51
- - TRANSFER: 49
+--- Tarefa 6: busca por cliente de origem ---
+Transação não encontrada para o cliente C12345
+Transaction[step=1, type=PAYMENT, amount=9839.64, origin=TransactionCustomer[name=C1231006815, oldBalance=170136.0, newBalance=160296.36], recipient=TransactionCustomer[name=M1979787155, oldBalance=0.0, newBalance=0.0], isFraud=false, isFlaggedFraud=false]
+
+--- Tarefa 6: benchmark de busca (pior caso, C1868032458) ---
+List, varredura O(n): 3,883,380 ns (3.883 ms)
+Map, indice O(1):     163 ns (0.000 ms)
+Consulta 23824x mais rapida no Map
+
+Custo de montar o indice, O(n) pago uma vez: 20,941,000 ns (20.941 ms)
+Ponto de equilibrio: o indice se paga a partir de 5 buscas
 ```
+
+A `Main` também imprime as cinco análises da tarefa 5 antes deste bloco. Os números daquela seção agora refletem 100.000 transações — 116 fraudes, prejuízo 62.823.097,20 — e não as 50.000 do enunciado daquela tarefa.
+
+### Por que o pior caso é a última transação
+
+`findFirst()` curto-circuita: para no primeiro match e abandona o resto do stream. Buscar `C1231006815`, a primeira transação, avalia o predicado **uma** vez; buscar `C1868032458`, a última, avalia **100.000** vezes. É o mesmo código com cem mil vezes mais trabalho, e é essa assimetria que o item 4 mede.
+
+Vale notar o que *não* foi escrito: uma variante com `filter().toList().get(0)` percorreria a lista inteira em toda busca, inclusive para o cliente da primeira posição, e apagaria justamente o contraste que a tarefa quer evidenciar.
 
 ### Decisões de implementação
 
-**Ordenação por `compareTo`, não por `equals`.** O CSV traz alguns valores em notação científica (`1.0E7`). Para o `equals` do `BigDecimal`, `1.0E7` e `10000000.00` são valores diferentes, porque ele compara também o *scale*. O `compareTo` compara apenas o valor numérico, e é o que coloca as duas fraudes de dez milhões no topo da linha 2 da saída.
+**A função de merge no `toMap` não é precaução.** O `toMap` de dois argumentos lança `IllegalStateException` na primeira chave repetida. Nas 100.000 primeiras transações do PaySim todas as origens são distintas, então ele passaria — por sorte da amostra. No primeiro milhão há 241 origens repetidas, e no arquivo completo 9.313. A sobrecarga de três argumentos recebe `(primeira, proxima) -> primeira`.
 
-**`setScale(2)` antes do `toPlainString()` na impressão.** São dois problemas distintos do mesmo dado: `toPlainString` desfaz o formato exponencial, mas o *scale* negativo de `1.0E7` ainda imprimiria `10000000`, sem casas decimais. O `setScale(2)` fecha a diferença com o enunciado.
+Manter a **primeira** ocorrência, e não a última, é o que faz o `Map` concordar com o `findFirst` da lista. Sem essa concordância as duas implementações responderiam transações diferentes para a mesma pergunta, e comparar os tempos não mediria nada.
 
-**Ordenação antes do `distinct()` no item 2.3.** Os "5 maiores clientes suspeitos" são os das maiores fraudes, não os 5 primeiros a aparecer no arquivo. Ordenar por `amount` antes de reduzir aos nomes é o que garante isso.
+**A medição cerca um lote, não uma chamada.** O `System.nanoTime()` avança em passos da ordem de 100 ns no Windows, e a consulta ao `Map` custa menos do que isso. Cronometrada sozinha, ela reportava 200 ns — dois ticks do cronômetro, não o custo da busca. Medindo um lote e dividindo pelo número de buscas, o valor caiu para cerca de 160 ns e passou a se repetir entre execuções. Um laço de aquecimento precede o lote, porque as primeiras execuções rodam interpretadas, antes de o JIT compilar o caminho.
 
-**`EnumMap` no `groupingBy` do item 2.5.** O `groupingBy` devolve um `HashMap`, cuja ordem de iteração não é garantida. A sobrecarga de três argumentos aceita uma fábrica de mapa: com `EnumMap`, a saída segue a ordem de declaração de `TransactionType` e `CASH_OUT` sai antes de `TRANSFER`, como no enunciado.
+**O resultado é consumido.** Se a busca fosse cronometrada e descartada, o compilador poderia concluir que a chamada não tem efeito observável e removê-la — o benchmark mediria um laço vazio. A validação de que o cliente foi encontrado cumpre esse papel.
 
-Só aparecem os tipos com ao menos uma fraude. O `groupingBy` não cria chave para grupo vazio, então `CASH_IN`, `DEBIT` e `PAYMENT` ficam fora do mapa em vez de sair com zero.
-
-### Organização da `Main`
-
-Cada item do enunciado virou um método privado de impressão, de modo que `main` se leia como o roteiro da tarefa. Os limites pedidos são constantes nomeadas (`TOP_FRAUDES`, `TOP_SUSPEITOS`) e a formatação monetária tem um ponto único. A `Main` orquestra e formata; as análises ficam em `FraudAnalyzer` e a leitura em `TransactionIngestor`.
+**O custo do índice entra no relatório.** O `Map` é mais rápido por consulta, mas cobra O(n) adiantado: montar o índice leva cerca de 22 ms, seis vezes o custo de uma única varredura. Para **uma** busca a lista ganha. O programa imprime o ponto de equilíbrio porque uma comparação que omite o custo de construção favorece o `Map` indevidamente — prova menos do que parece provar.
 
 ### Execução
 
@@ -104,4 +100,4 @@ java -cp target/classes br.com.zenon.Main
 
 Os CSVs ficam em `data/` e não são versionados.
 
-O projeto exige **JDK 25**: a `Main` usa o método de instância `void main()` e `IO.println`, finalizados nessa versão. Se o item 4 aparecer como `Prejuzo`, o console está lendo como UTF-8 o que a JVM escreveu no code page do Windows; nesse caso rode com `-Dstdout.encoding=UTF-8`.
+O projeto exige **JDK 25**: a `Main` usa o método de instância `void main()` e `IO.println`, finalizados nessa versão. Se algum acento aparecer quebrado, o console está lendo como UTF-8 o que a JVM escreveu no code page do Windows; nesse caso rode com `-Dstdout.encoding=UTF-8`.
