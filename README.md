@@ -23,81 +23,98 @@ Siga o passo a passo do quadro de atividades (Trello) do projeto prático dessa 
 
 ---
 
-## ✅ Tarefa 6 — Complexidade algorítmica: List vs Map
+## ✅ Tarefa 7 — I/O eficiente: carregar na RAM vs processar em stream
 
-A mesma pergunta respondida por duas estruturas de dados sobre 100.000 transações, com os tempos medidos: busca linear contra busca indexada.
+Processamento do arquivo completo do PaySim — 6.362.620 transações, cerca de 493 MB — com o heap limitado, sem nunca carregar o arquivo na memória.
 
 ### O que o enunciado pediu
 
 | # | Requisito | Status |
 |---|---|---|
-| 1 | Branch `tarefa/06-benchmark`, com commit e push da entrega | 🚧 ¹ |
-| 2 | `TransactionIngestor` carregando 100.000 transações | ✅ ² |
-| 3 | `TransactionListRepository` buscando por cliente de origem e devolvendo `Optional<Transaction>`, testado na `Main` com valor existente e inexistente | ✅ ³ |
-| 4 | Busca pelo `nameOrig` da última transação (`C1868032458`), o pior caso, medida com `System.nanoTime()` | ✅ |
-| 5 | `TransactionRepository` abstraído em interface, com a classe de lista como implementação | ✅ |
-| 6 | Segunda implementação carregando em `Map<String, Transaction>`, com nova medição | ✅ |
+| 1 | Branch `tarefa/07-nio`, com commit e push da entrega | 🚧 ¹ |
+| 2 | Remover o limite do `TransactionIngestor`, ver o `OutOfMemoryError` com `-Xmx128m` e devolver o limite a 100 mil | ✅ ² |
+| 3 | `TransactionReport` usando `java.nio.file.Files.lines(Path)` | ✅ |
+| 4 | Processar o arquivo inteiro calculando apenas total de linhas, total de fraudes e valor transacionado | ✅ |
+| 5 | `ReportMain` sobre o PaySim completo, com `-Xmx128m` | ✅ ³ |
 
-¹ Branch criada e commits da entrega feitos. O push é o passo que fecha a tarefa.
+¹ Branch criada e commit da entrega feito. O push é o passo que fecha a tarefa.
 
-² `LAST_LINE_TO_READ = 100_001`: o cabeçalho mais as 100.000 linhas de dados, mantendo a interpretação das tarefas anteriores. O próprio enunciado confirma essa leitura — só com o cabeçalho fora da contagem é que `C1868032458` cai na última posição da lista, como o item 4 pressupõe. Contando o cabeçalho, a última seria `C707662966`.
+² O erro foi reproduzido e está registrado abaixo. O limite voltou a `100_001` antes do commit, como o enunciado pede.
 
-³ A linha impressa para `C1231006815` é o `toString()` gerado pelo record, sem formatação própria: idêntica ao exemplo do enunciado.
+³ Os três números saem idênticos ao exemplo do enunciado.
 
-### Estrutura
+### O `OutOfMemoryError` do item 2
+
+Com `LAST_LINE_TO_READ = Integer.MAX_VALUE` e `-Xmx128m`:
+
+```
+Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
+	at java.base/java.util.Arrays.copyOf(Arrays.java:3478)
+	at java.base/java.util.ArrayList.grow(ArrayList.java:238)
+	at java.base/java.util.ArrayList.add(ArrayList.java:497)
+	at java.base/java.lang.String.split(String.java:3512)
+	at br.com.zenon.fraud.ingestor.TransactionLineParser.parse(TransactionLineParser.java:72)
+	at br.com.zenon.fraud.ingestor.NioTransactionIngestor.read(NioTransactionIngestor.java:60)
+	at br.com.zenon.Main.main(Main.java:84)
+```
+
+O topo da pilha é o diagnóstico: `ArrayList.grow`. Não faltou memória para **ler** o arquivo — faltou para **guardar** o resultado da leitura. A API de I/O não era o problema; o problema era a assinatura `List<Transaction> read(...)`, que obriga todas as transações a existirem ao mesmo tempo.
+
+### O que foi implementado
 
 | Arquivo | Papel |
 |---|---|
-| `TransactionRepository` | a interface: o contrato de busca, sem compromisso de custo |
-| `TransactionListRepository` | varredura linear, com `stream().filter().findFirst()` |
-| `TransactionMapRepository` | índice `Map<String, Transaction>` montado no construtor |
+| `TransactionReport` | varre o arquivo com `Files.lines` e agrega em uma única passada |
+| `TransactionSummary` | record com os três totais: o único resultado que sobrevive à varredura |
+| `ReportMain` | ponto de entrada próprio, separado da `Main` |
 
-A `Main` declara a variável como `TransactionRepository`, então o código de busca não sabe qual estrutura responde. É a mesma lição que a interface `TransactionIngestor` trouxe na tarefa 3, agora aplicada ao acesso aos dados: trocar a implementação não altera uma linha de quem consulta.
+`Files.lines(Path)` devolve um `Stream<String>` preguiçoso: não lê o arquivo para montar o stream, lê conforme o consumidor pede a próxima linha. Cada linha é contabilizada e descartada na hora.
 
 ### Resultado
 
 ```
---- Tarefa 6: busca por cliente de origem ---
-Transação não encontrada para o cliente C12345
-Transaction[step=1, type=PAYMENT, amount=9839.64, origin=TransactionCustomer[name=C1231006815, oldBalance=170136.0, newBalance=160296.36], recipient=TransactionCustomer[name=M1979787155, oldBalance=0.0, newBalance=0.0], isFraud=false, isFlaggedFraud=false]
-
---- Tarefa 6: benchmark de busca (pior caso, C1868032458) ---
-List, varredura O(n): 3,883,380 ns (3.883 ms)
-Map, indice O(1):     163 ns (0.000 ms)
-Consulta 23824x mais rapida no Map
-
-Custo de montar o indice, O(n) pago uma vez: 20,941,000 ns (20.941 ms)
-Ponto de equilibrio: o indice se paga a partir de 5 buscas
+Total de linhas: 6362620
+Total de fraudes: 8213
+Valor total transacionado: 1144392944759.77
 ```
 
-A `Main` também imprime as cinco análises da tarefa 5 antes deste bloco. Os números daquela seção agora refletem 100.000 transações — 116 fraudes, prejuízo 62.823.097,20 — e não as 50.000 do enunciado daquela tarefa.
+Cerca de 2,9 s para os 493 MB.
 
-### Por que o pior caso é a última transação
+### Até onde a memória desce
 
-`findFirst()` curto-circuita: para no primeiro match e abandona o resto do stream. Buscar `C1231006815`, a primeira transação, avalia o predicado **uma** vez; buscar `C1868032458`, a última, avalia **100.000** vezes. É o mesmo código com cem mil vezes mais trabalho, e é essa assimetria que o item 4 mede.
+| `-Xmx` | Resultado |
+|---|---|
+| `128m` (pedido pelo enunciado) | ✅ |
+| `32m` | ✅ |
+| `16m` | ✅ |
+| `8m` | ✅ |
 
-Vale notar o que *não* foi escrito: uma variante com `filter().toList().get(0)` percorreria a lista inteira em toda busca, inclusive para o cliente da primeira posição, e apagaria justamente o contraste que a tarefa quer evidenciar.
+Os mesmos três números, sobre o mesmo arquivo, com **8 MB de heap** — cerca de 1,6% do tamanho do arquivo. O consumo não acompanha o arquivo porque o que ocupa memória é o buffer de leitura, a linha corrente e três acumuladores: um custo constante, independente de o arquivo ter 500 MB ou 500 GB.
 
 ### Decisões de implementação
 
-**A função de merge no `toMap` não é precaução.** O `toMap` de dois argumentos lança `IllegalStateException` na primeira chave repetida. Nas 100.000 primeiras transações do PaySim todas as origens são distintas, então ele passaria — por sorte da amostra. No primeiro milhão há 241 origens repetidas, e no arquivo completo 9.313. A sobrecarga de três argumentos recebe `(primeira, proxima) -> primeira`.
+**`BigDecimal` no total, não `double`.** Não é preciosismo, e dá para provar. Uma soma de controle das 6.362.620 parcelas feita em ponto flutuante devolveu `1144392944759.72` — cinco centavos **a menos** que o valor exato. O erro não está em nenhuma parcela isolada: é o acúmulo de milhões de arredondamentos binários. O `BigDecimal` chega no `...759.77` do enunciado porque não arredonda a cada soma.
 
-Manter a **primeira** ocorrência, e não a última, é o que faz o `Map` concordar com o `findFirst` da lista. Sem essa concordância as duas implementações responderiam transações diferentes para a mesma pergunta, e comparar os tempos não mediria nada.
+**O `try`-com-recursos não é opcional.** O stream de `Files.lines` mantém um descritor de arquivo aberto, e fechar o stream é o que o libera. Sem o `try`-com-recursos o descritor vaza até o fim do processo — um defeito que não aparece em teste, porque o programa termina logo depois.
 
-**A medição cerca um lote, não uma chamada.** O `System.nanoTime()` avança em passos da ordem de 100 ns no Windows, e a consulta ao `Map` custa menos do que isso. Cronometrada sozinha, ela reportava 200 ns — dois ticks do cronômetro, não o custo da busca. Medindo um lote e dividindo pelo número de buscas, o valor caiu para cerca de 160 ns e passou a se repetir entre execuções. Um laço de aquecimento precede o lote, porque as primeiras execuções rodam interpretadas, antes de o JIT compilar o caminho.
+**Redução mutável em vez de `reduce`.** O `collect` de três argumentos — fornecedor, acumulador, combinador — é a forma prevista pela Stream API para acumular em um objeto mutável. Um `reduce` sobre um valor imutável criaria um objeto novo por linha, 6,3 milhões deles sem necessidade. Preferir isso a um `forEach` sobre variável externa também é deliberado: aqui o estado mutável pertence à redução, não ao escopo que a chama.
 
-**O resultado é consumido.** Se a busca fosse cronometrada e descartada, o compilador poderia concluir que a chamada não tem efeito observável e removê-la — o benchmark mediria um laço vazio. A validação de que o cliente foi encontrado cumpre esse papel.
+**Apenas duas colunas são lidas.** O relatório não tem o que fazer com saldos, nomes de clientes ou tipo da operação, então não monta uma `Transaction`.
 
-**O custo do índice entra no relatório.** O `Map` é mais rápido por consulta, mas cobra O(n) adiantado: montar o índice leva cerca de 22 ms, seis vezes o custo de uma única varredura. Para **uma** busca a lista ganha. O programa imprime o ponto de equilíbrio porque uma comparação que omite o custo de construção favorece o `Map` indevidamente — prova menos do que parece provar.
+Vale separar duas coisas que o erro do item 2 costuma confundir: o problema era a **retenção**, não a criação de objetos. Montar e descartar milhões de objetos de vida curta é algo que o coletor de lixo faz bem — construir as 6,3 milhões de `Transaction` e jogá-las fora caberia nos 128 MB. O que não cabe é mantê-las todas referenciadas. Ler só duas colunas economiza trabalho, não memória.
+
+**Uma classe de entrada separada.** A `Main` carrega transações em uma lista para analisá-las e consultá-las, e por isso trabalha sobre uma fatia do arquivo. Juntar as duas na mesma classe apagaria o contraste que a tarefa quer mostrar: a `Main` precisa do limite, a `ReportMain` não.
 
 ### Execução
 
 ```bash
 cd zenon-fraud-detector
 mvn -q clean compile
-java -cp target/classes br.com.zenon.Main
+java -Xmx128m -cp target/classes br.com.zenon.ReportMain
 ```
+
+Para reproduzir o item 2, trocar `LAST_LINE_TO_READ` por `Integer.MAX_VALUE` e rodar `br.com.zenon.Main` com `-Xmx128m`.
 
 Os CSVs ficam em `data/` e não são versionados.
 
-O projeto exige **JDK 25**: a `Main` usa o método de instância `void main()` e `IO.println`, finalizados nessa versão. Se algum acento aparecer quebrado, o console está lendo como UTF-8 o que a JVM escreveu no code page do Windows; nesse caso rode com `-Dstdout.encoding=UTF-8`.
+O projeto exige **JDK 25**: as classes de entrada usam o método de instância `void main()` e `IO.println`, finalizados nessa versão.
