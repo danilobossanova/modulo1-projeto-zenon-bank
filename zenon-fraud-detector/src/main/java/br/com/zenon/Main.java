@@ -5,6 +5,7 @@ import br.com.zenon.fraud.Transaction;
 import br.com.zenon.fraud.TransactionType;
 import br.com.zenon.fraud.ingestor.NioTransactionIngestor;
 import br.com.zenon.fraud.ingestor.TransactionIngestor;
+import br.com.zenon.fraud.repository.TransactionListRepository;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -12,15 +13,21 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Ponto de entrada da Tarefa 5: carrega as transações do CSV e imprime as cinco análises
- * de fraude pedidas pelo enunciado.
+ * Ponto de entrada do projeto: carrega as transações do CSV e executa as entregas das
+ * tarefas 5 e 6.
  *
- * <p>Cada item do enunciado virou um método de impressão, de modo que {@code main} se leia
- * como o roteiro da tarefa em vez de uma sequência de chamadas e formatações soltas.
+ * <p>Primeiro saem as cinco análises de fraude da tarefa 5; depois a busca de transações
+ * por cliente de origem, que é o objeto da tarefa 6.
  *
- * <p>A divisão de responsabilidades é deliberada: as análises moram em {@link FraudAnalyzer}
- * e a leitura em {@link TransactionIngestor}. Aqui ficam apenas a orquestração e o formato
- * da saída — esta classe não calcula nada.
+ * <p>Cada item dos enunciados virou um método de impressão, de modo que {@code main} se leia
+ * como o roteiro das tarefas em vez de uma sequência de chamadas e formatações soltas.
+ *
+ * <p>A tarefa 6 elevou a leitura para 100.000 transações, então os números da seção 5
+ * refletem essa amostra maior e não os 50.000 do enunciado daquela tarefa.
+ *
+ * <p>A divisão de responsabilidades é deliberada: as análises moram em {@link FraudAnalyzer},
+ * a busca em {@link TransactionListRepository} e a leitura em {@link TransactionIngestor}.
+ * Aqui ficam apenas a orquestração e o formato da saída — esta classe não calcula nada.
  */
 public class Main {
 
@@ -32,11 +39,17 @@ public class Main {
      */
     private static final String ARQUIVO = "data/PS_20174392719_1491204439457_log.csv";
 
-    /** Quantas fraudes de maior valor o item 2 do enunciado pede. */
+    /** Quantas fraudes de maior valor o item 2 do enunciado da tarefa 5 pede. */
     private static final int TOP_FRAUDES = 3;
 
-    /** Quantos clientes suspeitos o item 3 do enunciado pede. */
+    /** Quantos clientes suspeitos o item 3 do enunciado da tarefa 5 pede. */
     private static final int TOP_SUSPEITOS = 5;
+
+    /** Cliente de origem que existe no arquivo: é a primeira transação da lista. */
+    private static final String CLIENTE_EXISTENTE = "C1231006815";
+
+    /** Cliente que não existe no arquivo, para exercitar o {@code Optional} vazio. */
+    private static final String CLIENTE_INEXISTENTE = "C12345";
 
     void main() {
 
@@ -47,7 +60,7 @@ public class Main {
         //As linhas invalidas sao registradas em System.err durante a leitura
         List<Transaction> transacoes = ingestor.read(ARQUIVO);
 
-        //Uma leitura so alimenta as cinco analises: cada metodo abaixo abre um novo
+        //Uma leitura so alimenta todas as analises: cada metodo abaixo abre um novo
         //stream sobre a mesma lista, porque um stream nao pode ser reutilizado.
         FraudAnalyzer analyzer = new FraudAnalyzer(transacoes);
 
@@ -56,6 +69,13 @@ public class Main {
         imprimirClientesSuspeitos(analyzer);
         imprimirPrejuizoTotal(analyzer);
         imprimirFraudesPorTipo(analyzer);
+
+        //O repositorio consulta a mesma lista ja carregada: nao le o arquivo de novo.
+        TransactionListRepository repository = new TransactionListRepository(transacoes);
+
+        IO.println("\n--- Tarefa 6: busca por cliente de origem ---");
+        imprimirBusca(repository, CLIENTE_INEXISTENTE);
+        imprimirBusca(repository, CLIENTE_EXISTENTE);
     }
 
     /** Item 1: quantas transações do arquivo estão marcadas como fraude. */
@@ -99,6 +119,23 @@ public class Main {
         IO.println("5. Fraudes por Tipo:");
         Map<TransactionType, Long> fraudesPorTipo = analyzer.countFraudsByType();
         fraudesPorTipo.forEach((tipo, quantidade) -> IO.println(" - " + tipo + ": " + quantidade));
+    }
+
+    /**
+     * Imprime o resultado de uma busca por cliente de origem.
+     *
+     * <p>Não há {@code isPresent()} nem {@code get()}: {@code ifPresentOrElse} recebe os dois
+     * caminhos e obriga a declarar o que acontece na ausência. Chamar {@code get()} em um
+     * {@link java.util.Optional} vazio lança exceção em tempo de execução, o que devolveria
+     * ao código o mesmo problema do {@code null} com outro nome.
+     *
+     * @param repository de onde buscar
+     * @param originName nome do cliente de origem procurado
+     */
+    private void imprimirBusca(TransactionListRepository repository, String originName) {
+        repository.findByOriginName(originName).ifPresentOrElse(
+                IO::println,
+                () -> IO.println("Transação não encontrada para o cliente " + originName));
     }
 
     /**
