@@ -20,7 +20,7 @@ import java.util.Optional;
  * <p>A lista recebida <em>não</em> é copiada, para não duplicar centenas de milhares de
  * referências em memória. Em troca, quem constrói o repositório não deve modificá-la depois.
  */
-public class TransactionListRepository {
+public class TransactionListRepository implements TransactionRepository {
 
     private final List<Transaction> transactions;
 
@@ -48,6 +48,7 @@ public class TransactionListRepository {
      * @param originName nome do cliente de origem (ex.: {@code C1231006815})
      * @return a transação, ou vazio se nenhuma tiver essa origem
      */
+    @Override
     public Optional<Transaction> findByOriginName(String originName) {
         return transactions.stream()
                 .filter(transaction -> transaction.origin().name().equals(originName))
